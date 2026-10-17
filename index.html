@@ -48,14 +48,13 @@ textarea{width:100%;height:420px;background:#000;color:#fff;font-family:'Segoe U
     </div>
   </div>
   <div id="status" role="status">Listo. Agrega jugadores o genera los tops.</div>
-  <p class="note">Consulta directa a la API de GDBrowser. Solo se consultan estadísticas públicas.</p>
+  <p class="note">Consulta multi-canal de perfiles de Geometry Dash optimizada para GitHub Pages.</p>
   <div class="output-container">
     <textarea id="output" readonly placeholder="Los tops aparecerán aquí..."></textarea>
   </div>
 </div>
 <script>
 const FACTORY_DEFAULTS = ["taladritogamer","h3rn4n99","XstevenUSF","itsgodzeusx","dvalishvili","laizof","wedvy543","fiwor","karfen24"];
-const API_BASE = "https://gdbrowser.com/api/profile/";
 let players = [];
 
 window.addEventListener("load", () => {
@@ -127,26 +126,45 @@ function removeUser(name) {
   saveData(); renderAdminStorage(); setStatus(`Usuario "${name}" eliminado.`);
 }
 
-async function fetchUserStats(username) {
-  const res = await fetch(API_BASE + encodeURIComponent(username));
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`);
-  }
-  const data = await res.json();
-  if (!data || typeof data !== "object") {
-    throw new Error("Respuesta no válida.");
-  }
-  if (data.error || (data.message && !("stars" in data))) {
-    throw new Error(data.error || data.message || "Usuario no encontrado.");
-  }
-  return {
-    stars: Number(data.stars) || 0,
-    demons: Number(data.demons) || 0,
-    moons: Number(data.moons) || 0
-  };
+function parseStats(data) {
+  if (!data || typeof data !== "object") throw new Error("Sin respuesta válida.");
+  if (data.error || data.message === "User not found") throw new Error("Usuario no encontrado.");
+
+  const stars = Number(data.stars !== undefined ? data.stars : (data.starsCount || 0));
+  const demons = Number(data.demons !== undefined ? data.demons : (data.demon || data.demonsCount || 0));
+  const moons = Number(data.moons !== undefined ? data.moons : (data.moonsCount || 0));
+
+  return { stars: stars || 0, demons: demons || 0, moons: moons || 0 };
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function fetchUserStats(username) {
+  const clean = username.trim();
+  const target = `https://gdbrowser.com/api/profile/${encodeURIComponent(clean)}`;
+
+  // Pasarela con proxy que añade headers CORS limpios en tiempo real
+  const gateways = [
+    `https://cors-anywhere.herokuapp.com/${target}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(target)}`
+  ];
+
+  for (const url of gateways) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const text = await res.text();
+      if (text.trim().startsWith("<") || text.includes("<!DOCTYPE")) continue;
+      const data = JSON.parse(text);
+      return parseStats(data);
+    } catch (e) {
+      // Continuar al siguiente si falla
+    }
+  }
+
+  throw new Error("Servidor no respondió.");
+}
 
 async function updateRanks() {
   const output = document.getElementById("output");
@@ -172,9 +190,8 @@ async function updateRanks() {
         failed.push(`${name}: ${e.message}`);
       }
 
-      // Pausa de 300 ms entre cada uno para que GDBrowser no sature las peticiones
       if (i < players.length - 1) {
-        await sleep(300);
+        await sleep(500);
       }
     }
 
