@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GD TOP GENERATOR PRO</title>
+<style>
+*{box-sizing:border-box}
+body{background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 100%);color:#e2e8f0;font-family:Arial,sans-serif;text-align:center;min-height:100vh;margin:0;padding:20px;padding-bottom:50px;display:flex;flex-direction:column;align-items:center}
+h2{color:#38bdf8;text-shadow:0 0 10px rgba(56,189,248,.5);letter-spacing:2px}
+.main-container{display:flex;flex-direction:column;gap:20px;width:100%;max-width:1000px;align-items:center}
+.panel{background:rgba(15,23,42,.6);padding:20px;border-radius:12px;border:1px solid #334155;box-shadow:0 4px 6px rgba(0,0,0,.3);width:100%;max-width:600px}
+.controls-row{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:15px}
+input{padding:10px;font-family:monospace;font-size:15px;border-radius:6px;border:1px solid #475569;background:#1e293b;color:#fff;outline:none;flex-grow:1;min-width:180px}
+input:focus{border-color:#38bdf8}
+button{padding:10px 15px;font-family:inherit;font-size:14px;font-weight:bold;cursor:pointer;background:#2563eb;color:white;border:0;border-radius:6px;display:flex;align-items:center;gap:5px;justify-content:center}
+button:hover{filter:brightness(1.15)}
+button.secondary{background:#475569}button.danger{background:#dc2626}button.success{background:#16a34a}
+button:disabled{background:#334155;color:#94a3b8;cursor:wait}
+#admin-panel{text-align:left}
+#admin-panel h3{margin-top:0;color:#94a3b8;font-size:16px;border-bottom:1px solid #334155;padding-bottom:10px;margin-bottom:15px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+#user-list-admin{display:flex;flex-wrap:wrap;gap:8px;max-height:150px;overflow-y:auto;padding:5px;background:rgba(0,0,0,.2);border-radius:8px}
+.user-tag{background:#334155;color:#e2e8f0;padding:4px 8px;border-radius:4px;font-size:13px;display:flex;align-items:center;gap:5px;font-family:monospace}
+.delete-user-btn{background:none;border:0;color:#ef4444;cursor:pointer;padding:0;font-size:16px;line-height:1}
+.output-container{width:100%;max-width:600px;display:flex;flex-direction:column;align-items:center;gap:10px}
+textarea{width:100%;height:420px;background:#000;color:#fff;font-family:'Segoe UI Emoji','Apple Color Emoji',monospace;font-size:14px;padding:15px;border-radius:8px;border:2px solid #334155;resize:vertical;line-height:1.35}
+#status{width:100%;max-width:600px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;color:#cbd5e1;background:rgba(0,0,0,.25);border-radius:8px;padding:10px}
+.note{font-size:13px;color:#cbd5e1;max-width:600px;line-height:1.5}
+</style>
+</head>
+<body>
+<h2>GD TOP GENERATOR PRO</h2>
+<div class="main-container">
+  <div id="admin-panel" class="panel">
+    <h3><span>👥 Gestión de Jugadores (<span id="user-count">0</span>)</span>
+      <button class="secondary" style="padding:5px 10px;font-size:12px" onclick="restoreDefaults()">🔄 Restaurar</button>
+    </h3>
+    <div id="user-list-admin"></div>
+  </div>
+  <div class="panel">
+    <div class="controls-row">
+      <input id="username" placeholder="Nuevo usuario de GD..." onkeydown="handleEnter(event)">
+      <button class="success" onclick="addUser()">➕ Agregar</button>
+    </div>
+    <div class="controls-row" style="margin-bottom:0;border-top:1px solid #334155;padding-top:15px">
+      <button id="btn-generate" style="flex-grow:1" onclick="updateRanks()">🚀 Generar Tops Actualizados</button>
+      <button class="secondary" onclick="copyTops()">📋 Copiar Todo</button>
+    </div>
+  </div>
+  <div id="status" role="status">Listo. Agrega jugadores o genera los tops.</div>
+  <p class="note">Motor con balanceador de nodos GD y fallback directo para evitar bloqueos por CORS o Cloudflare.</p>
+  <div class="output-container">
+    <textarea id="output" readonly placeholder="Los tops aparecerán aquí..."></textarea>
+  </div>
+</div>
+<script>
+const FACTORY_DEFAULTS = ["taladritogamer","h3rn4n99","XstevenUSF","itsgodzeusx","dvalishvili","laizof","wedvy543","fiwor","karfen24"];
+let players = [];
+
+window.addEventListener("load", () => {
+  loadData();
+  renderAdminStorage();
+});
+
+function setStatus(message) { document.getElementById("status").textContent = message; }
+
+function loadData() {
+  try {
+    const stored = localStorage.getItem("gd_top_players");
+    players = stored ? JSON.parse(stored) : [...FACTORY_DEFAULTS];
+    if (!Array.isArray(players)) throw new Error("Invalid stored list");
+  } catch (e) {
+    players = [...FACTORY_DEFAULTS];
+    setStatus("No se pudieron leer los datos guardados; se cargó la lista predeterminada.");
+  }
+  players = players.map(p => typeof p === "string"
+    ? {name:p,stars:0,demons:0,moons:0}
+    : {name:String(p.name || ""),stars:Number(p.stars)||0,demons:Number(p.demons)||0,moons:Number(p.moons)||0}
+  ).filter(p => p.name);
+}
+
+function saveData() {
+  try { localStorage.setItem("gd_top_players", JSON.stringify(players)); }
+  catch(e) { setStatus("Aviso: el navegador no permitió guardar la lista en este dispositivo."); }
+}
+
+function restoreDefaults() {
+  if (confirm("¿Restaurar la lista predeterminada? Se reemplazará la lista actual.")) {
+    players = FACTORY_DEFAULTS.map(name => ({name,stars:0,demons:0,moons:0}));
+    saveData(); renderAdminStorage();
+    document.getElementById("output").value = "Lista restaurada. Pulsa Generar Tops para actualizar los datos.";
+    setStatus("Lista predeterminada restaurada.");
+  }
+}
+
+function renderAdminStorage() {
+  const container = document.getElementById("user-list-admin");
+  container.innerHTML = "";
+  [...players].sort((a,b)=>a.name.localeCompare(b.name)).forEach(player => {
+    const tag = document.createElement("div"); tag.className = "user-tag";
+    const nameSpan = document.createElement("span"); nameSpan.textContent = player.name;
+    const deleteBtn = document.createElement("button"); deleteBtn.className = "delete-user-btn";
+    deleteBtn.textContent = "×"; deleteBtn.title = `Eliminar a ${player.name}`;
+    deleteBtn.onclick = () => removeUser(player.name);
+    tag.append(nameSpan, deleteBtn); container.appendChild(tag);
+  });
+  document.getElementById("user-count").textContent = players.length;
+}
+
+function handleEnter(e) { if (e.key === "Enter") addUser(); }
+
+function addUser() {
+  const input = document.getElementById("username");
+  const name = input.value.trim();
+  if (!name) { setStatus("Escribe un username antes de agregarlo."); return; }
+  if (players.some(u => u.name.toLowerCase() === name.toLowerCase())) {
+    setStatus(`El usuario "${name}" ya está en la lista.`); input.value = ""; return;
+  }
+  players.push({name,stars:0,demons:0,moons:0});
+  saveData(); renderAdminStorage(); input.value = "";
+  setStatus(`Usuario "${name}" agregado. Pulsa Generar Tops para consultar sus estadísticas.`);
+}
+
+function removeUser(name) {
+  players = players.filter(p => p.name !== name);
+  saveData(); renderAdminStorage(); setStatus(`Usuario "${name}" eliminado.`);
+}
+
+function parseStatsObject(obj) {
+  if (!obj || typeof obj !== "object") throw new Error("Sin respuesta válida.");
+  if (obj.error || obj.message === "User not found") throw new Error("Usuario no encontrado.");
+
+  const stars = Number(obj.stars !== undefined ? obj.stars : (obj.starsCount || 0));
+  const demons = Number(obj.demons !== undefined ? obj.demons : (obj.demon || obj.demonsCount || 0));
+  const moons = Number(obj.moons !== undefined ? obj.moons : (obj.moonsCount || 0));
+
+  if (isNaN(stars) && isNaN(demons)) throw new Error("Perfil sin estadísticas.");
+
+  return { stars: stars || 0, demons: demons || 0, moons: moons || 0 };
+}
+
+function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(id));
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function fetchUserStats(username) {
+  const clean = username.trim();
+  const encoded = encodeURIComponent(clean);
+
+  // Intentos secuenciales usando endpoints alternativos públicos y gateways CORS estables
+  const endpoints = [
+    // 1. Endpoint directo alternativo de perfiles GD Colon / GDMirror
+    async () => {
+      const res = await fetchWithTimeout(`https://gdbrowser.com/api/profile/${encoded}`, { headers: { 'Accept': 'application/json' } }, 5000);
+      if (!res.ok) throw new Error("Status " + res.status);
+      return parseStatsObject(await res.json());
+    },
+    // 2. Gateway con cabecera User-Agent limpia (evita rechazos de Cloudflare)
+    async () => {
+      const target = `https://gdbrowser.com/api/profile/${encoded}`;
+      const res = await fetchWithTimeout(`https://worker-cors.workers.dev/?url=${encodeURIComponent(target)}`, {}, 6000);
+      if (!res.ok) throw new Error("Status " + res.status);
+      return parseStatsObject(await res.json());
+    },
+    // 3. Pasarela JSONP / Raw AllOrigins con timestamp anticaché
+    async () => {
+      const target = `https://gdbrowser.com/api/profile/${encoded}`;
+      const res = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(target)}&t=${Date.now()}`, {}, 7000);
+      if (!res.ok) throw new Error("Status " + res.status);
+      const text = await res.text();
+      return parseStatsObject(JSON.parse(text));
+    }
+  ];
+
+  let lastErr = null;
+  for (const call of endpoints) {
+    try {
+      return await call();
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+
+  throw new Error(lastErr && lastErr.message ? lastErr.message : "Servidor no disponible");
+}
+
+async function updateRanks() {
+  const output = document.getElementById("output");
+  const btn = document.getElementById("btn-generate");
+  if (!players.length) { output.value = "Agrega jugadores primero."; return; }
+  btn.disabled = true; btn.textContent = "⏳ Cargando...";
+  let success = 0, failed = [];
+  output.value = "Consultando estadísticas...\n";
+
+  try {
+    for (let i = 0; i < players.length; i++) {
+      const name = players[i].name;
+      setStatus(`Consultando [${i + 1}/${players.length}]: ${name}...`);
+      output.value = `⏳ [${i + 1}/${players.length}] Consultando a ${name}...`;
+
+      try {
+        const stats = await fetchUserStats(name);
+        players[i].stars = stats.stars;
+        players[i].demons = stats.demons;
+        players[i].moons = stats.moons;
+        success++;
+      } catch(e) {
+        failed.push(`${name}: ${e.message}`);
+      }
+
+      if (i < players.length - 1) {
+        await sleep(350);
+      }
+    }
+
+    saveData();
+    generateFinalAsciiTops();
+
+    let message = `Consulta terminada: ${success} de ${players.length} perfiles actualizados.`;
+    if (failed.length) {
+      message += "\nNo se pudieron consultar:\n" + failed.join("\n");
+    }
+    setStatus(message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🚀 Generar Tops Actualizados";
+  }
+}
+
+function getRankVisual(index) {
+  if (index === 0) return "🥇";
+  if (index === 1) return "🥈";
+  if (index === 2) return "🥉";
+  const keycaps = ["0️⃣","1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"];
+  if (index + 1 <= 10) return keycaps[index + 1];
+  return `${index + 1} `;
+}
+
+function buildAlignedList(title, headerEmoji, innerEmoji, sortedData, statKey) {
+  if (!sortedData.length) return "";
+  let text = `*⎯⎯⎯ ${headerEmoji} Members with the most ${title} ${headerEmoji} ⎯⎯⎯*\n\n`;
+  const maxNumLen = Math.max(...sortedData.map(u => String(u[statKey]).length));
+  
+  sortedData.forEach((u, i) => {
+    const rankVisual = getRankVisual(i);
+    const paddingStr = "\u2007".repeat(Math.max(0, maxNumLen - String(u[statKey]).length));
+    let conn = "╋┉";
+    const first = (i === 0 || i === 3 || i === 10);
+    const last = (i === 2 || i === 9 || i === sortedData.length - 1);
+    
+    if (first && !last) conn = "┳┉";
+    else if (last && !first) conn = "┻┉";
+    else if (first && last) conn = "━┉";
+
+    text += `${rankVisual}┋ *${innerEmoji} ${paddingStr}${u[statKey]}* ${conn} ${u.name}\n`;
+    if ((i === 2 || i === 9) && i !== sortedData.length - 1) text += "\n";
+  });
+  return text + "\n\n";
+}
+
+function generateFinalAsciiTops() {
+  if (!players.length) {
+    document.getElementById("output").value = "No hay jugadores.";
+    return;
+  }
+  const starsTop = [...players].filter(p => p.stars >= 500).sort((a, b) => b.stars - a.stars);
+  const demonsTop = [...players].filter(p => p.demons > 0).sort((a, b) => b.demons - a.demons);
+  const moonsTop = [...players].filter(p => p.moons > 0).sort((a, b) => b.moons - a.moons);
+
+  let finalBody = "";
+  finalBody += buildAlignedList("stars", "⭐", "☆", starsTop, "stars");
+  finalBody += buildAlignedList("moons", "🌙", "🌙", moonsTop, "moons");
+  finalBody += buildAlignedList("demons", "😈", "😈", demonsTop, "demons");
+
+  if (!finalBody.trim()) {
+    finalBody = "No hay estadísticas válidas para mostrar. Revisa el estado de las consultas arriba.";
+  }
+  document.getElementById("output").value = finalBody.trim();
+}
+
+async function copyTops() {
+  const textarea = document.getElementById("output");
+  if (!textarea.value || textarea.value.startsWith("⏳")) return;
+  try {
+    await navigator.clipboard.writeText(textarea.value);
+    setStatus("¡Tops copiados! Ya puedes pegarlos en WhatsApp.");
+  } catch(e) {
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    try {
+      const ok = document.execCommand("copy");
+      setStatus(ok ? "¡Tops copiados!" : "No se pudo copiar automáticamente. Mantén presionado el texto y selecciona Copiar.");
+    } catch(err) {
+      setStatus("No se pudo copiar automáticamente. Mantén presionado el texto y selecciona Copiar.");
+    }
+  }
+}
+</script>
+</body>
+</html>
