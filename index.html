@@ -48,7 +48,7 @@ textarea{width:100%;height:420px;background:#000;color:#fff;font-family:'Segoe U
     </div>
   </div>
   <div id="status" role="status">Listo. Agrega jugadores o genera los tops.</div>
-  <p class="note">Motor con balanceador de nodos GD y fallback directo para evitar bloqueos por CORS o Cloudflare.</p>
+  <p class="note">Versión optimizada para GitHub Pages con consulta directa y filtrado de respuestas no-JSON.</p>
   <div class="output-container">
     <textarea id="output" readonly placeholder="Los tops aparecerán aquí..."></textarea>
   </div>
@@ -126,67 +126,48 @@ function removeUser(name) {
   saveData(); renderAdminStorage(); setStatus(`Usuario "${name}" eliminado.`);
 }
 
-function parseStatsObject(obj) {
-  if (!obj || typeof obj !== "object") throw new Error("Sin respuesta válida.");
-  if (obj.error || obj.message === "User not found") throw new Error("Usuario no encontrado.");
+function parseStats(data) {
+  if (!data || typeof data !== "object") throw new Error("Sin respuesta válida.");
+  if (data.error || data.message === "User not found") throw new Error("Usuario no encontrado.");
 
-  const stars = Number(obj.stars !== undefined ? obj.stars : (obj.starsCount || 0));
-  const demons = Number(obj.demons !== undefined ? obj.demons : (obj.demon || obj.demonsCount || 0));
-  const moons = Number(obj.moons !== undefined ? obj.moons : (obj.moonsCount || 0));
+  const stars = Number(data.stars !== undefined ? data.stars : (data.starsCount || 0));
+  const demons = Number(data.demons !== undefined ? data.demons : (data.demon || data.demonsCount || 0));
+  const moons = Number(data.moons !== undefined ? data.moons : (data.moonsCount || 0));
 
-  if (isNaN(stars) && isNaN(demons)) throw new Error("Perfil sin estadísticas.");
+  if (isNaN(stars) && isNaN(demons)) throw new Error("Perfil sin estadísticas públicas.");
 
   return { stars: stars || 0, demons: demons || 0, moons: moons || 0 };
-}
-
-function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(url, { ...options, signal: controller.signal })
-    .finally(() => clearTimeout(id));
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function fetchUserStats(username) {
   const clean = username.trim();
-  const encoded = encodeURIComponent(clean);
+  const target = `https://gdbrowser.com/api/profile/${encodeURIComponent(clean)}`;
 
-  // Intentos secuenciales usando endpoints alternativos públicos y gateways CORS estables
-  const endpoints = [
-    // 1. Endpoint directo alternativo de perfiles GD Colon / GDMirror
-    async () => {
-      const res = await fetchWithTimeout(`https://gdbrowser.com/api/profile/${encoded}`, { headers: { 'Accept': 'application/json' } }, 5000);
-      if (!res.ok) throw new Error("Status " + res.status);
-      return parseStatsObject(await res.json());
-    },
-    // 2. Gateway con cabecera User-Agent limpia (evita rechazos de Cloudflare)
-    async () => {
-      const target = `https://gdbrowser.com/api/profile/${encoded}`;
-      const res = await fetchWithTimeout(`https://worker-cors.workers.dev/?url=${encodeURIComponent(target)}`, {}, 6000);
-      if (!res.ok) throw new Error("Status " + res.status);
-      return parseStatsObject(await res.json());
-    },
-    // 3. Pasarela JSONP / Raw AllOrigins con timestamp anticaché
-    async () => {
-      const target = `https://gdbrowser.com/api/profile/${encoded}`;
-      const res = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(target)}&t=${Date.now()}`, {}, 7000);
-      if (!res.ok) throw new Error("Status " + res.status);
+  // 1. Intento directo HTTPS desde GitHub Pages (no envía origen null)
+  try {
+    const res = await fetch(target, { headers: { 'Accept': 'application/json' } });
+    if (res.ok) {
       const text = await res.text();
-      return parseStatsObject(JSON.parse(text));
+      if (!text.trim().startsWith("<")) {
+        return parseStats(JSON.parse(text));
+      }
     }
-  ];
+  } catch (e) {}
 
-  let lastErr = null;
-  for (const call of endpoints) {
-    try {
-      return await call();
-    } catch (err) {
-      lastErr = err;
+  // 2. Respaldo vía gateway codetabs (filtrando respuestas HTML)
+  try {
+    const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(target)}`);
+    if (res.ok) {
+      const text = await res.text();
+      if (!text.trim().startsWith("<")) {
+        return parseStats(JSON.parse(text));
+      }
     }
-  }
+  } catch (e) {}
 
-  throw new Error(lastErr && lastErr.message ? lastErr.message : "Servidor no disponible");
+  throw new Error("No se pudo obtener el perfil de los servidores.");
 }
 
 async function updateRanks() {
@@ -214,7 +195,7 @@ async function updateRanks() {
       }
 
       if (i < players.length - 1) {
-        await sleep(350);
+        await sleep(600); // Pausa necesaria para no saturar la API
       }
     }
 
